@@ -104,8 +104,7 @@ class AMRNetTrainer(_BaseTrainer):
 
         # Training
         with torch.enable_grad():
-            self._train(data_loader=self.val_loader, epoch=total_epoch)
-            #self._train(data_loader=self.train_loader, epoch=total_epoch)
+            self._train(data_loader=self.train_loader, epoch=total_epoch)
 
         # Validation
         with torch.no_grad():
