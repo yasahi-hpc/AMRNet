@@ -17,4 +17,5 @@ module load gcc/8.3.1
 module load ompi/4.1.1
 
 mpirun -np 8 -map-by ppr:8:node -mca pml ob1 python3 run.py \
-    --batch_size 32 --n_epochs 1 --model_name AMR_Net
+    --batch_size 32 --n_epochs 1 --model_name AMR_Net \
+    -data_dir /work/gr21/i18048/Test/Deeplearning/FlowAnalysis/dataset/datasets/steady_flow_Re20_v8

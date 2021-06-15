@@ -20,4 +20,5 @@ module list
 mpirun -x PATH -x LD_LIBRARY_PATH -x PSM2_CUDA=1 -x PSM2_GPUDIRECT=1 \
     --mca pml ob1 -npernode 4 -np 4 \
     -x UCX_MEMTYPE_CACHE=n -x HOROVOD_MPI_THREADS_DISABLE=1 \
-    python run.py --batch_size 4 --n_epochs 1 --model_name AMR_Net
+    python run.py --batch_size 4 --n_epochs 1 --model_name AMR_Net \
+    -data_dir /home/1/17IKA143/jhpcn2021/work/Deeplearning/FlowCNN/SteadyFlow/AMR_Net/dataset/datasets/steady_flow_Re20_v8
