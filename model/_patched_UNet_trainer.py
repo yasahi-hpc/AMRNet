@@ -1,4 +1,4 @@
-from ._base_trainer import _BaseTrainer
+from ._base_trainer import _BaseTrainer, MeasureMemory
 import pathlib
 import torch.multiprocessing as mp
 import torch
@@ -82,6 +82,9 @@ class PatchedUNetTrainer(_BaseTrainer):
         # Set normalization coefficients
         super()._set_normalization_coefs(shape=[1,1,1,-1,1,1])
 
+        # Memory measurement
+        self.memory = MeasureMemory(device=self.device)
+
         # Synchronize
         if self.device == 'cuda':
             torch.cuda.synchronize() # Waits for everything to finish running
@@ -131,7 +134,8 @@ class PatchedUNetTrainer(_BaseTrainer):
 
         # Training
         with torch.enable_grad():
-            self._train(data_loader=self.train_loader, epoch=total_epoch)
+            self._train(data_loader=self.val_loader, epoch=total_epoch)
+            #self._train(data_loader=self.train_loader, epoch=total_epoch)
 
         # Validation
         with torch.no_grad():
@@ -167,6 +171,9 @@ class PatchedUNetTrainer(_BaseTrainer):
         coords = {'epochs': np.arange(self.n_epochs) + self.epoch_start}
         attrs = super()._get_attrs()
         attrs['seconds'] = seconds
+
+        attrs['memory_reserved'] = self.memory_consumption['reserved']
+        attrs['memory_alloc'] = self.memory_consumption['alloc']
 
         ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
         result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{self.run_number:03}.h5'
@@ -292,6 +299,13 @@ class PatchedUNetTrainer(_BaseTrainer):
                     loss_mae = self.criterion(pred_flows_Lv2, flows_Lv2_)
                     
                     self.opt2.zero_grad()
+
+                    ### Measure memory usage before backward
+                    self.memory.measure()
+                    if 'reserved' not in self.memory_consumption:
+                        self.memory_consumption['reserved'] = self.memory.reserved()
+                        self.memory_consumption['alloc'] = self.memory.alloc()
+
                     loss_mae.backward()
                     self.opt2.step()
                     
