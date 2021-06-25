@@ -1,4 +1,4 @@
-from ._base_trainer import _BaseTrainer
+from ._base_trainer import _BaseTrainer, MeasureMemory
 import pathlib
 import torch.multiprocessing as mp
 import torch
@@ -63,6 +63,9 @@ class Pix2PixHDTrainer(_BaseTrainer):
 
         # Set normalization coefficients
         super()._set_normalization_coefs(shape=[1,-1,1,1])
+
+        # Memory measurement
+        self.memory = MeasureMemory(device=self.device)
 
         # Synchronize
         if self.device == 'cuda':
@@ -144,6 +147,9 @@ class Pix2PixHDTrainer(_BaseTrainer):
         attrs = super()._get_attrs()
         attrs['seconds'] = seconds
 
+        attrs['memory_reserved'] = self.memory_consumption['reserved']
+        attrs['memory_alloc'] = self.memory_consumption['alloc']
+
         ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
         result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{self.run_number:03}.h5'
         ds.to_netcdf(result_filename, engine='netcdf4')
@@ -197,6 +203,13 @@ class Pix2PixHDTrainer(_BaseTrainer):
             loss_mae = self.criterion(pred_flows_Lv2, flows_Lv2)
 
             self.opt.zero_grad()
+
+            ### Measure memory usage before backward
+            self.memory.measure()
+            if 'reserved' not in self.memory_consumption:
+                self.memory_consumption['reserved'] = self.memory.reserved()
+                self.memory_consumption['alloc']    = self.memory.alloc()
+            
             loss_mae.backward()
             self.opt.step()
 

@@ -36,6 +36,23 @@ class Timer:
     def elapsed_seconds(self):
         return self.elapsed_ms_ * 1.e-3
 
+class MeasureMemory:
+    def __init__(self, device = 'cuda'):
+        self.reserved_ = 0.
+        self.alloc_ = 0.
+        self.device = device
+
+    def measure(self):
+        if 'cuda' in self.device:
+            self.reserved_ = torch.cuda.memory_reserved(device=self.device) / 1.e9
+            self.alloc_ = torch.cuda.memory_allocated(device=self.device) / 1.e9
+
+    def reserved(self):
+        return self.reserved_
+
+    def alloc(self):
+        return self.alloc_
+
 class _BaseTrainer:
     """
     Base class for training
@@ -44,7 +61,7 @@ class _BaseTrainer:
     def __init__(self, **kwargs):
         self.loss_dict = defaultdict(list)
         self.elapsed_times = defaultdict(list)
-        self.memory = defaultdict(list)
+        self.memory_consumption = {}
 
         allowed_kwargs = {
                           'dim',
@@ -125,6 +142,9 @@ class _BaseTrainer:
           
         if not self.img_dir.exists():
             self.img_dir.mkdir(parents=True)
+
+        # Barrier
+        hvd.allreduce(torch.tensor(1), name="Barrier")
         
         # Create sub directories
         sub_img_dir = self.img_dir / f'rank{self.rank}'
