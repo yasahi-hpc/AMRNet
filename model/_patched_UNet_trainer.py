@@ -9,6 +9,7 @@ import xarray as xr
 import itertools
 from .flow_dataset import FlowDataset
 from .unet import UNet
+from .visualization import save_flows
 
 class PatchedUNetTrainer(_BaseTrainer):
     def __init__(self, **kwargs):
@@ -90,9 +91,9 @@ class PatchedUNetTrainer(_BaseTrainer):
             torch.cuda.synchronize() # Waits for everything to finish running
 
     def _get_model(self, run_number):
-        model0 = UNet(dim=self.dim)
-        model1 = UNet(dim=self.dim)
-        model2 = UNet(dim=self.dim)
+        model0 = UNet(dim=self.dim, padding_mode=self.padding_mode)
+        model1 = UNet(dim=self.dim, padding_mode=self.padding_mode)
+        model2 = UNet(dim=self.dim, padding_mode=self.padding_mode)
 
         self.epoch_start = 0
         if run_number > 0:
@@ -134,8 +135,7 @@ class PatchedUNetTrainer(_BaseTrainer):
 
         # Training
         with torch.enable_grad():
-            self._train(data_loader=self.val_loader, epoch=total_epoch)
-            #self._train(data_loader=self.train_loader, epoch=total_epoch)
+            self._train(data_loader=self.train_loader, epoch=total_epoch)
 
         # Validation
         with torch.no_grad():
@@ -197,7 +197,7 @@ class PatchedUNetTrainer(_BaseTrainer):
 
         # Timers
 
-        for sdf, flows in data_loader:
+        for i, (sdf, flows) in enumerate(data_loader):
             # Load data and meta-data
             sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf
             flows_Lv0, flows_Lv1, flows_Lv2 = flows
@@ -321,7 +321,32 @@ class PatchedUNetTrainer(_BaseTrainer):
                     self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
 
             # Saving figures
+            if i == 0:
+                self.timer.start()
+                super()._postprocess(flows_Lv0, self.flows_Lv0_var0, self.flows_Lv0_var1)
+                super()._postprocess(flows_Lv1, self.flows_Lv1_var0, self.flows_Lv1_var1)
+                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                
+                ### Lv0 figures
+                level = 0
+                save_flows(flows_Lv0, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv0_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv0_-flows_Lv0.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
 
+                ### Lv1 figures
+                level = 1
+                save_flows(flows_Lv1, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv1_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv1_-flows_Lv1.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+
+                ### Lv2 figures
+                level = 2
+                save_flows(flows_Lv2, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_-flows_Lv2.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+                
+                self.timer.stop()
+                self.elapsed_times[f'save_figs_{name}'].append(self.timer.elapsed_seconds())
 
         # Horovod: average metric values across workers.
         losses = {}
@@ -339,7 +364,7 @@ class PatchedUNetTrainer(_BaseTrainer):
         log_loss = [0] * 3
         nb_samples = len(data_loader.sampler)
 
-        for sdf, flows in data_loader:
+        for i, (sdf, flows) in enumerate(data_loader):
             # Load data and meta-data
             sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf
             flows_Lv0, flows_Lv1, flows_Lv2 = flows
@@ -444,6 +469,32 @@ class PatchedUNetTrainer(_BaseTrainer):
                     self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
 
             # Saving figures
+            if i == 0:
+                self.timer.start()
+                super()._postprocess(flows_Lv0, self.flows_Lv0_var0, self.flows_Lv0_var1)
+                super()._postprocess(flows_Lv1, self.flows_Lv1_var0, self.flows_Lv1_var1)
+                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                
+                ### Lv0 figures
+                level = 0
+                save_flows(flows_Lv0, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv0_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv0_-flows_Lv0.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+
+                ### Lv1 figures
+                level = 1
+                save_flows(flows_Lv1, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv1_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv1_-flows_Lv1.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+
+                ### Lv2 figures
+                level = 2
+                save_flows(flows_Lv2, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_-flows_Lv2.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+                
+                self.timer.stop()
+                self.elapsed_times[f'save_figs_{name}'].append(self.timer.elapsed_seconds())
 
         # Horovod: average metric values across workers.
         losses = {}

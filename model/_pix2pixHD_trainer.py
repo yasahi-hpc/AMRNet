@@ -9,6 +9,7 @@ import xarray as xr
 import itertools
 from .flow_dataset import FlowDataset
 from .amr_net import LocalEnhancer
+from .visualization import save_flows
 
 class Pix2PixHDTrainer(_BaseTrainer):
     def __init__(self, **kwargs):
@@ -72,7 +73,7 @@ class Pix2PixHDTrainer(_BaseTrainer):
             torch.cuda.synchronize() # Waits for everything to finish running
 
     def _get_model(self, run_number):
-        model = LocalEnhancer(dropout=self.dropout, dim=self.dim, patched=False)
+        model = LocalEnhancer(dropout=self.dropout, dim=self.dim, padding_mode=self.padding_mode, patched=False)
 
         self.epoch_start = 0
         if run_number > 0:
@@ -110,8 +111,7 @@ class Pix2PixHDTrainer(_BaseTrainer):
 
         # Training
         with torch.enable_grad():
-            self._train(data_loader=self.val_loader, epoch=total_epoch)
-            #self._train(data_loader=self.train_loader, epoch=total_epoch)
+            self._train(data_loader=self.train_loader, epoch=total_epoch)
 
         # Validation
         with torch.no_grad():
@@ -171,7 +171,7 @@ class Pix2PixHDTrainer(_BaseTrainer):
 
         level = 2
         # Timers
-        for sdf, flows in data_loader:
+        for i, (sdf, flows) in enumerate(data_loader):
             # Load data and meta-data
             sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf
             *_, flows_Lv2 = flows
@@ -225,6 +225,19 @@ class Pix2PixHDTrainer(_BaseTrainer):
             self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
 
             # Saving figures
+            if i==0:
+                self.timer.start()
+                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                
+                ### Lv2 figures
+                level = 2
+                save_flows(flows_Lv2, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                
+                # Check errors
+                save_flows(pred_flows_Lv2_-flows_Lv2.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+                self.timer.stop()
+                self.elapsed_times[f'save_figs_{name}'].append(self.timer.elapsed_seconds())
 
         # Horovod: average metric values across workers.
         losses = {}
@@ -240,7 +253,7 @@ class Pix2PixHDTrainer(_BaseTrainer):
         nb_samples = len(data_loader.sampler)
 
         level = 2
-        for sdf, flows in data_loader:
+        for i, (sdf, flows) in enumerate(data_loader):
             # Load data and meta-data
             sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf
             *_, flows_Lv2 = flows
@@ -283,6 +296,19 @@ class Pix2PixHDTrainer(_BaseTrainer):
             self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
 
             # Saving figures
+            if i==0:
+                self.timer.start()
+                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                
+                ### Lv2 figures
+                level = 2
+                save_flows(flows_Lv2, name=name, img_dir = self.sub_img_dir, type_name = 'ref', level = level, epoch=epoch)
+                save_flows(pred_flows_Lv2_, name=name, img_dir = self.sub_img_dir, type_name = 'pred', level = level, epoch=epoch)
+                
+                # Check errors
+                save_flows(pred_flows_Lv2_-flows_Lv2.cpu(), name=name, img_dir = self.sub_img_dir, type_name = 'error', level = level, epoch=epoch)
+                self.timer.stop()
+                self.elapsed_times[f'save_figs_{name}'].append(self.timer.elapsed_seconds())
 
         # Horovod: average metric values across workers.
         losses = {}

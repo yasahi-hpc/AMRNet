@@ -150,6 +150,8 @@ class _BaseTrainer:
         sub_img_dir = self.img_dir / f'rank{self.rank}'
         if not sub_img_dir.exists():
             sub_img_dir.mkdir(parents=True)
+
+        self.sub_img_dir = sub_img_dir
          
         self.model_dir = self.out_dir / f'rank{self.rank}'
         if not self.model_dir.exists():
@@ -161,6 +163,7 @@ class _BaseTrainer:
             sub_dir = sub_img_dir / f'{mode}_Lv{level}'
             if not sub_dir.exists():
                 sub_dir.mkdir(parents=True)
+
 
     def __split_files(self):
         at_least_one = lambda number: 1 if number < 1 else number
