@@ -187,6 +187,9 @@ class Pix2PixHDTrainer(_BaseTrainer):
             self.timer.stop()
             self.elapsed_times[f'MemcpyH2D_{name}'].append(self.timer.elapsed_seconds())
 
+            # Keep sdfs on CPUs
+            sdf_Lv2_cpu = sdf_Lv2.to('cpu')
+
             ## Normalization or standardization
             sdf_Lv0 = super()._preprocess(sdf_Lv0, self.sdf_Lv0_var0, self.sdf_Lv0_var1)
             sdf_Lv1 = super()._preprocess(sdf_Lv1, self.sdf_Lv1_var0, self.sdf_Lv1_var1)
@@ -227,7 +230,10 @@ class Pix2PixHDTrainer(_BaseTrainer):
             # Saving figures
             if i==0:
                 self.timer.start()
-                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                flows_Lv2 = super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+
+                ### Zeros inside objects
+                pred_flows_Lv2_ = super()._zeros_inside_objects(pred_flows_Lv2_, sdf_Lv2_cpu)
                 
                 ### Lv2 figures
                 level = 2
@@ -269,6 +275,9 @@ class Pix2PixHDTrainer(_BaseTrainer):
             self.timer.stop()
             self.elapsed_times[f'MemcpyH2D_{name}'].append(self.timer.elapsed_seconds())
 
+            # Keep sdfs on CPUs
+            sdf_Lv2_cpu = sdf_Lv2.to('cpu')
+
             ## Normalization or standardization
             sdf_Lv0 = super()._preprocess(sdf_Lv0, self.sdf_Lv0_var0, self.sdf_Lv0_var1)
             sdf_Lv1 = super()._preprocess(sdf_Lv1, self.sdf_Lv1_var0, self.sdf_Lv1_var1)
@@ -298,7 +307,10 @@ class Pix2PixHDTrainer(_BaseTrainer):
             # Saving figures
             if i==0:
                 self.timer.start()
-                super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                flows_Lv2 = super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+
+                ### Zeros inside objects
+                pred_flows_Lv2_ = super()._zeros_inside_objects(pred_flows_Lv2_, sdf_Lv2_cpu)
                 
                 ### Lv2 figures
                 level = 2

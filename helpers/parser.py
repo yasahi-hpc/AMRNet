@@ -74,6 +74,33 @@ def parse():
                         choices=None, \
                         help='Name of the model (default: AMR_Net)', \
                         metavar=None)
+    parser.add_argument('--lr', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default=0.0002, \
+                        type=float, \
+                        choices=None, \
+                        help='Learning rate', \
+                        metavar=None)
+    parser.add_argument('--beta_1', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default=0.9, \
+                        type=float, \
+                        choices=None, \
+                        help='beta_1 for Adam', \
+                        metavar=None)
+    parser.add_argument('--beta_2', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default=0.999, \
+                        type=float, \
+                        choices=None, \
+                        help='beta_2 for Adam', \
+                        metavar=None)
 
     args = parser.parse_args()
 

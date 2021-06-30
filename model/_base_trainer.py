@@ -317,3 +317,6 @@ class _BaseTrainer:
             return self.__destandardize(x, *args)
         else:
             return x
+
+    def _zeros_inside_objects(self, flows, SDF):
+        return torch.where(SDF <= 0, 0., flows.double()).float()
