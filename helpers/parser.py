@@ -47,6 +47,15 @@ def parse():
                         choices=None, \
                         help='Number of epochs', \
                         metavar=None)
+    parser.add_argument('--run_number', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default=0, \
+                        type=int, \
+                        choices=None, \
+                        help='Run number', \
+                        metavar=None)
     parser.add_argument('--padding_mode', \
                         action='store', \
                         nargs='?', \

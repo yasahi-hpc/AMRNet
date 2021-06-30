@@ -16,9 +16,21 @@ module load cuda openmpi/3.1.4-opa10.10
 module load nccl/2.4.2
 module list
 
+# For restart
+if ls log_rst*.txt > /dev/null 2>&1; then
+    nb_restart=$(ls log_rst*.txt | wc -l)
+    echo "Submit run$nb_restart"
+else
+    nb_restart=0
+    echo "Submit run0"
+fi
+
 # Run Horovod example with 4 GPUs [AT LEAST WORK]
-mpirun -x PATH -x LD_LIBRARY_PATH -x PSM2_CUDA=1 -x PSM2_GPUDIRECT=1 \
-    --mca pml ob1 -npernode 4 -np 4 \
-    -x UCX_MEMTYPE_CACHE=n -x HOROVOD_MPI_THREADS_DISABLE=1 \
-    python run.py --batch_size 4 --n_epochs 1 --model_name AMR_Net \
-    -data_dir /home/1/17IKA143/jhpcn2021/work/Deeplearning/FlowCNN/SteadyFlow/AMR_Net/dataset/datasets/steady_flow_Re20_v8
+if [ $nb_restart -lt 20 ]; then
+    mpirun -x PATH -x LD_LIBRARY_PATH -x PSM2_CUDA=1 -x PSM2_GPUDIRECT=1 \
+        --mca pml ob1 -npernode 4 -np 4 \
+        -x UCX_MEMTYPE_CACHE=n -x HOROVOD_MPI_THREADS_DISABLE=1 \
+        python run.py --batch_size 4 --n_epochs 1 --model_name AMR_Net \
+        -data_dir /home/1/17IKA143/jhpcn2021/work/Deeplearning/FlowCNN/SteadyFlow/AMR_Net/dataset/datasets/steady_flow_Re20_v8 \
+        --padding_mode replicate --lr 0.0002 --run_number $nb_restart
+fi
