@@ -4,13 +4,16 @@ _AMRNet_ is designed to predict steady flows from signed distance functions (SDF
 Follwoing the landmarking work by [Guo et al](https://dl.acm.org/doi/10.1145/2939672.2939738), 
 we extend the CNN prediction model to be applicable to the flow fields based on adaptive meshes. 
 For this purpose, we employ the [pix2pixHD](https://github.com/NVIDIA/pix2pixHD) based network to handle the data with multiple resolutions. 
+![Network architecture](figs/AMR_Net_arch.png)
+Instead of using the high-resolution global input, we use the global (un-patched) data and local (patched) data to predict the multi-resolution flow fields.
+
 The inputs of the network are multi-resolutional signed distance functions (SDFs). 
 <p float="left">
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv0_grid.png" width="300" />
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv1_grid.png" width="300" /> 
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv2_grid.png" width="300" />
+  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv0_grid.png" width="250" />
+  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv1_grid.png" width="250" /> 
+  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv2_grid.png" width="250" />
 </p>
-We use the global (un-patched) data and local (patched) data to predict the multi-resolution flow fields.
+
 
 # Usage
 
