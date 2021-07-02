@@ -78,7 +78,7 @@ class UNetTrainer(_BaseTrainer):
             torch.cuda.synchronize() # Waits for everything to finish running
 
     def _get_model(self, run_number):
-        model = UNet(n_layers=8, hidden_dim=16, dim=self.dim, padding_mode=self.padding_mode)
+        model = UNet(n_layers=8, hidden_dim=8, dim=self.dim, padding_mode=self.padding_mode)
 
         self.epoch_start = 0
         if run_number > 0:

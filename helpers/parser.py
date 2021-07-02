@@ -60,10 +60,10 @@ def parse():
                         action='store', \
                         nargs='?', \
                         const=None, \
-                        default='replicate', \
+                        default='reflect', \
                         type=str, \
                         choices=None, \
-                        help='Padding type (default: replicate)', \
+                        help='Padding type (default: reflect)', \
                         metavar=None)
     parser.add_argument('--preprocess_type', \
                         action='store', \
