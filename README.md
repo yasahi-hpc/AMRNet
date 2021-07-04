@@ -5,14 +5,16 @@ Following the landmarking work by [Guo et al](https://dl.acm.org/doi/10.1145/293
 we extend the CNN prediction model to be applicable to the flow fields based on adaptive meshes. 
 For this purpose, we employ the [pix2pixHD](https://github.com/NVIDIA/pix2pixHD) based network to handle the data with multiple resolutions. 
 ![Network architecture](figs/AMR_Net_arch.png)
-Instead of using the high-resolution global input, we use the global (un-patched) data and local (patched) data to predict the multi-resolution flow fields.
+Instead of using high-resolution global inputs, we use __low-resolution global (un-patched)__ data and __high-resolution local (patched)__ data to predict multi-resolution flow fields. 
 
-The inputs of the network are multi-resolutional signed distance functions (SDFs). 
+The inputs of the network are multi-resolutional signed distance functions (SDFs) from Lv0 (un-patched low-resolution) to Lv2 (patched high-resolution). 
 <p float="left">
   <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv0_grid.png" width="250" />
   <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv1_grid.png" width="250" /> 
   <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv2_grid.png" width="250" />
 </p>
+The predicted high-resolution global flow fields (Lv2) from the multi-resolution patched SDFs are shown as follows.
+The major benefit of this method is the memory efficiency and the higher compatibility with the multi-resolution dataset.
 
 
 # Usage
@@ -94,8 +96,9 @@ After preparing your batch script ```./batch_scripts/<your_job_script>```, you c
 ```
 ./job.sh
 ```
-After the training, you will find the log file ```log_rst<run_number>.txt``` and the directories ```GeneratedImages``` and ```torch_model_MPI<MPI_procs>``` (for example, ```torch_model_MPI4```). 
+After training, you will find the log file ```log_rst<run_number>.txt``` and the directories ```GeneratedImages``` and ```torch_model_MPI<MPI_procs>``` (for example, ```torch_model_MPI4```). 
 In ```GeneratedImages```, you will find subdirectories ```rank<MPI_rank>/<mode>_Lv<level>``` (for example, ```rank0/test_Lv2```), wherein generated flow images are stored. In ```torch_model_MPI<MPI_procs>```, the subdirectory ```<model_name>``` (like ```patched_UNet```) is genertate which stores training result ```flow_cnn_result_rank<MPI_rank>_rst<run_number>.h5``` (for example, ```flow_cnn_result_rank0_rst000.h5```) and Torch state files ```model_<MPI_rank>_<epoch>.pt``` (like ```model_0_000.pt```). 
 
 
 # Summary
+
