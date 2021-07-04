@@ -5,16 +5,16 @@ Following the landmarking work by [Guo et al](https://dl.acm.org/doi/10.1145/293
 we extend the CNN prediction model to be applicable to the flow fields based on adaptive meshes. 
 For this purpose, we employ the [pix2pixHD](https://github.com/NVIDIA/pix2pixHD) based network to handle the data with multiple resolutions. 
 ![Network architecture](figs/AMR_Net_arch.png)
-Instead of using high-resolution global inputs, we use __low-resolution global (un-patched)__ data and __high-resolution local (patched)__ data to predict multi-resolution flow fields. 
 
-The inputs of the network are multi-resolutional signed distance functions (SDFs) from Lv0 (un-patched low-resolution) to Lv2 (patched high-resolution). 
-<p float="left">
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv0_grid.png" width="250" />
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv1_grid.png" width="250" /> 
-  <img src="https://github.com/yasahi-hpc/AMRNet/blob/main/figs/SDF_Lv2_grid.png" width="250" />
-</p>
+Instead of using high-resolution global inputs, we use _low-resolution global (un-patched)_ data and _high-resolution local (patched)_ data to predict multi-resolution flow fields. 
+
+The inputs of the network are multi-resolutional signed distance functions (SDFs) from Lv0 (un-patched low-resolution) to Lv2 (patched high-resolution). Lv2 corresponds to 1024 x 1024 resolution. 
+![SDFs](figs/SDFs.png)
+
 The predicted high-resolution global flow fields (Lv2) from the multi-resolution patched SDFs are shown as follows.
 The major benefit of this method is the memory efficiency and the higher compatibility with the multi-resolution dataset.
+
+![CNN Prediction](figs/GroundTruthAndCNN.png)
 
 
 # Usage
@@ -22,14 +22,14 @@ The major benefit of this method is the memory efficiency and the higher compati
 ## Installation
 This code relies on the following packages. As a deeplearing framework, we use [PyTorch](https://pytorch.org).
 - Install  
-[numpy](https://numpy.org), [PyTorch](https://pytorch.org), [xarray](http://xarray.pydata.org/en/stable/) and [netcdf4](https://github.com/Unidata/netcdf4-python)
+[numpy](https://numpy.org), [PyTorch](https://pytorch.org), [xarray](http://xarray.pydata.org/en/stable/), [horovod](https://github.com/horovod/horovod) and [netcdf4](https://github.com/Unidata/netcdf4-python)
 
 - Clone this repo  
 ```git clone https://github.com/yasahi-hpc/AMRNet.git```
 
 
 ## Prepare dataset
-The 2D flow dataset for AMR-Net has been computed by simulations using the lattice Boltzmann methods (LBMs). The inputs of simulations are signed distance functions (SDFs) and the outputs are 2D flow fields <img src="https://render.githubusercontent.com/render/math?math={u}"> and <img src="https://render.githubusercontent.com/render/math?math={v}">. Each data is stored in a hdf5 file in the following format.
+The 2D flow dataset for AMR-Net has been computed by simulations using the lattice Boltzmann methods (LBMs). The inputs of simulations are signed distance functions (SDFs) and the outputs are 2D flow fields <img src="https://render.githubusercontent.com/render/math?math={u}"> and <img src="https://render.githubusercontent.com/render/math?math={v}">. In each simulation, 1-5 objects are placed randomly at the center of the computational domain. The objects are randomly chosen from circles, ellipses, rectangles and roundedrectangles. Each data is stored in a hdf5 file in the following format.
 ```
 <xarray.Dataset>
 Dimensions:       (patch_x_lv0: 1, patch_x_lv1: 2, patch_x_lv2: 4, patch_y_lv0: 1, patch_y_lv1: 2, patch_y_lv2: 4, x_lv0: 256, x_lv1: 256, x_lv2: 256, y_lv0: 256, y_lv1: 256, y_lv2: 256)
@@ -70,11 +70,12 @@ The dataset can be downloaded from [Dataset (under preparation)]().
 
 
 ## Training
+For training, it is recommended to use multiple Nvidia GPUs (12 GB memory or larger). We have tested the model on Nvidia [P100](https://images.nvidia.com/content/pdf/tesla/whitepaper/pascal-architecture-whitepaper.pdf) and [A100](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf) GPUs.
 We have prepared 4 versions of models, including
-- U-Net (```--model_name UNet```)
-- pU-Net (```--model_name Patched_UNet```)
-- pix2pixHD (```--model_name Pix2PixHD```)
-- AMR-Net (```--model_name AMR_Net```).  
+- U-Net (```--model_name UNet```): Conventional U-Net model using un-patched Lv2 SDFs as inputs.
+- pU-Net (```--model_name Patched_UNet```): U-Net model using patched Lv2 SDFs as inputs.
+- pix2pixHD (```--model_name Pix2PixHD```): Generator of pix2pixHD using un-patched Lv2 SDFs as inputs.
+- AMR-Net (```--model_name AMR_Net```): the network explained above using patched Lv2 SDFs as inputs.
 
 The command line arguments corresponding to each model are shown in the parenthesis. 
 In addition to the model name, the argument ```-data_dir``` should be the directory path where you placed the dataset (default: ```./dataset```). 
@@ -99,6 +100,4 @@ After preparing your batch script ```./batch_scripts/<your_job_script>```, you c
 After training, you will find the log file ```log_rst<run_number>.txt``` and the directories ```GeneratedImages``` and ```torch_model_MPI<MPI_procs>``` (for example, ```torch_model_MPI4```). 
 In ```GeneratedImages```, you will find subdirectories ```rank<MPI_rank>/<mode>_Lv<level>``` (for example, ```rank0/test_Lv2```), wherein generated flow images are stored. In ```torch_model_MPI<MPI_procs>```, the subdirectory ```<model_name>``` (like ```patched_UNet```) is genertate which stores training result ```flow_cnn_result_rank<MPI_rank>_rst<run_number>.h5``` (for example, ```flow_cnn_result_rank0_rst000.h5```) and Torch state files ```model_<MPI_rank>_<epoch>.pt``` (like ```model_0_000.pt```). 
 
-
-# Summary
 
