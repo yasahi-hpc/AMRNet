@@ -1,6 +1,6 @@
-# AMRNet
+# AMR-Net
 
-_AMRNet_ is designed to predict steady flows from signed distance functions (SDF). 
+_AMR-Net_ is designed to predict steady flows from signed distance functions (SDF). 
 Following the landmarking work by [Guo et al](https://dl.acm.org/doi/10.1145/2939672.2939738), 
 we extend the CNN prediction model to be applicable to the flow fields based on adaptive meshes. 
 For this purpose, we employ the [pix2pixHD](https://github.com/NVIDIA/pix2pixHD) based network to handle the data with multiple resolutions. 
