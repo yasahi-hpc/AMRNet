@@ -1,17 +1,17 @@
 # AMR-Net
 
-_AMR-Net_ is designed to predict steady flows from signed distance functions (SDF). 
+_AMR-Net_ is designed to predict steady flows from signed distance functions (SDFs). 
 Following the landmarking work by [Guo et al](https://dl.acm.org/doi/10.1145/2939672.2939738), 
-we extend the CNN prediction model to be applicable to the flow fields based on adaptive meshes. 
+we extend the CNN prediction model to be applicable to the flow fields based on multi-resolution meshes. 
 For this purpose, we employ the [pix2pixHD](https://github.com/NVIDIA/pix2pixHD) based network to handle the data with multiple resolutions. 
 ![Network architecture](figs/AMR_Net_arch.png)
 
 Instead of using high-resolution global inputs, we use _low-resolution global (un-patched)_ data and _high-resolution local (patched)_ data to predict multi-resolution flow fields. 
 
-The inputs of the network are multi-resolutional signed distance functions (SDFs) from Lv0 (un-patched low-resolution) to Lv2 (patched high-resolution). Lv2 corresponds to 1024 x 1024 resolution. 
+The inputs of the network are multi-resolutional signed distance functions (SDFs) at Lv0 (256 x 256 resolution, _un-patched low-resolution_), Lv1 (512 x 512 resolution, _patched middle-resolution_) and Lv2 (1024 x 1024 resolution, _patched high-resolution_). 
 ![SDFs](figs/SDFs.png)
 
-The predicted high-resolution global flow fields (Lv2) from the multi-resolution patched SDFs are shown as follows.
+The predicted high-resolution global flow fields (Lv2, 1024 x 1024 resolution) from multi-resolution patched SDFs are shown as follows.
 The major benefit of this method is the memory efficiency and the higher compatibility with the multi-resolution dataset.
 
 ![CNN Prediction](figs/GroundTruthAndCNN.png)
@@ -29,7 +29,7 @@ This code relies on the following packages. As a deeplearing framework, we use [
 
 
 ## Prepare dataset
-The 2D flow dataset for AMR-Net has been computed by simulations using the lattice Boltzmann methods (LBMs). The inputs of simulations are signed distance functions (SDFs) and the outputs are 2D flow fields <img src="https://render.githubusercontent.com/render/math?math={u}"> and <img src="https://render.githubusercontent.com/render/math?math={v}">. In each simulation, 1-5 objects are placed randomly at the center of the computational domain. The objects are randomly chosen from circles, ellipses, rectangles and roundedrectangles. Each data is stored in a hdf5 file in the following format.
+The 2D flow dataset for AMR-Net has been computed by simulations using the lattice Boltzmann methods (LBMs). The inputs of simulations are signed distance functions (SDFs) and the outputs are 2D flow fields <img src="https://render.githubusercontent.com/render/math?math={u}"> and <img src="https://render.githubusercontent.com/render/math?math={v}">. In each simulation, 1-5 objects are placed randomly at the center of the computational domain. The objects are randomly chosen from circles, ellipses, rectangles and roundedrectangles. Each simulation data is stored in a hdf5 file in the following format.
 ```
 <xarray.Dataset>
 Dimensions:       (patch_x_lv0: 1, patch_x_lv1: 2, patch_x_lv2: 4, patch_y_lv0: 1, patch_y_lv1: 2, patch_y_lv2: 4, x_lv0: 256, x_lv1: 256, x_lv2: 256, y_lv0: 256, y_lv1: 256, y_lv2: 256)
@@ -64,7 +64,7 @@ Data variables:
     v_lv2         (patch_y_lv2, patch_x_lv2, y_lv2, x_lv2) float32 ...
     m             int64 ...
 ```
-The inputs are ```SDF_lv0 - SDF_lv2``` and outputs are ```u_lv0 - u_lv2, v_lv0 - v_lv2```. Each variable has the shape of ```(py, px, Ny, Nx)```, where ```px, py``` are the number of patches in x and y directions. ```Nx, Ny``` are the number of grid points in x and y directions inside a patch. 
+The inputs for the model are ```SDF_lv0 - SDF_lv2``` and outputs are ```u_lv0 - u_lv2, v_lv0 - v_lv2```. Each variable has the shape of ```(py, px, Ny, Nx)```, where ```px, py``` are the number of patches in x and y directions. ```Nx, Ny``` are the number of grid points in x and y directions inside a patch. 
 
 The dataset can be downloaded from [Dataset (under preparation)]().
 
