@@ -21,7 +21,7 @@ The major benefit of this method is the memory efficiency and the higher compati
 
 ## Installation
 This code relies on the following packages. As a deeplearing framework, we use [PyTorch](https://pytorch.org).
-- Install  
+- Install Python libraries
 [numpy](https://numpy.org), [PyTorch](https://pytorch.org), [xarray](http://xarray.pydata.org/en/stable/), [horovod](https://github.com/horovod/horovod) and [netcdf4](https://github.com/Unidata/netcdf4-python)
 
 - Clone this repo  
@@ -93,7 +93,7 @@ mpirun -x PATH -x LD_LIBRARY_PATH -x PSM2_CUDA=1 -x PSM2_GPUDIRECT=1 \
 fi
 ```
 
-After preparing your batch script ```./batch_scripts/<your_job_script>```, you can run the script by 
+Firstly, you need to prepare your batch script ```./batch_scripts/<your_job_script>``` and modify ```./job.sh```. Then, you can run (or submit) the script by 
 ```
 ./job.sh
 ```
