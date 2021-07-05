@@ -4,9 +4,9 @@ def parse():
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument('-data_dir', \
                         action='store', \
-                        nargs=None, \
+                        nargs='?', \
                         const=None, \
-                        default=None, \
+                        default='./dataset', \
                         type=str, \
                         choices=None, \
                         help='directory of datasets', \
