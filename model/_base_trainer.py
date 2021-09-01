@@ -3,6 +3,7 @@ import torch.multiprocessing as mp
 import pathlib
 import horovod.torch as hvd
 import numpy as np
+import xarray as xr
 import itertools
 import time
 from collections import defaultdict
@@ -159,7 +160,7 @@ class _BaseTrainer:
         
         # Save models
         if epoch % 10 == 0:
-            self._save_models(self, total_epoch=total_epoch)
+            self._save_models(total_epoch=total_epoch)
 
     def _train(self, data_loader, epoch):
         raise NotImplementedError()
@@ -199,7 +200,7 @@ class _BaseTrainer:
         else:
             # Save models
             total_epoch = self.epoch_start + self.n_epochs - 1
-            self._save_models(self, total_epoch=total_epoch)
+            self._save_models(total_epoch=total_epoch)
             
             # Saving relevant data in a hdf5 file
             data_vars = {}
@@ -216,7 +217,7 @@ class _BaseTrainer:
                     data_vars[key] = (['epochs'], np.asarray(value))
             
             coords = {'epochs': np.arange(self.n_epochs) + self.epoch_start}
-            attrs = super()._get_attrs()
+            attrs = self._get_attrs()
             attrs['seconds'] = seconds
             
             attrs['memory_reserved'] = self.memory_consumption['reserved']
@@ -229,8 +230,8 @@ class _BaseTrainer:
             if self.master:
                 log_filename = f'log_rst{self.run_number:03}.txt'
             
-            with open(log_filename, 'w') as f:
-                f.write( f'It took {seconds} seconds for {self.n_epochs} epochs')
+                with open(log_filename, 'w') as f:
+                    f.write( f'It took {seconds} seconds for {self.n_epochs} epochs')
 
     # Inference
     def infer(self):
