@@ -235,7 +235,6 @@ class _BaseTrainer:
     # Inference
     def infer(self):
         self._infer()
-        raise NotImplementedError()
 
     def _infer(self):
         raise NotImplementedError()
