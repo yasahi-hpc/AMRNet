@@ -166,21 +166,11 @@ class _BaseTrainer:
 
 
     def __split_files(self):
-        at_least_one = lambda number: 1 if number < 1 else number
-
-        all_files = sorted( list(pathlib.Path(self.data_dir).glob('shot*.h5')) )
-        n_samples = len(all_files)
-        m_test = int(n_samples * self.test_ratio)
-        m_val = int(n_samples * self.validation_ratio)
-        m_test = at_least_one(m_test) # [0:m_test] -> test dataset
-        m_val  = at_least_one(m_val)  # [m_test:m_test + m_val] -> val dataset
-        m_test_and_val = m_test + m_val
-        m_train = n_samples - m_test - m_val  # [m_test + m_val:n_samples] -> train dataset
-        
-        train_files = all_files[m_test_and_val:]
-        val_files   = all_files[m_test:m_test_and_val]
-        test_files  = all_files[:m_test]
-        assert (len(train_files) + len(val_files) + len(test_files)) == n_samples
+        names = ['train', 'val', 'test']
+        train_dir, val_dir, test_dir = [pathlib.Path(self.data_dir) / name for name in names]
+        train_files = sorted( list(train_dir.glob('shot*.h5')) )
+        val_files   = sorted( list(val_dir.glob('shot*.h5')) )
+        test_files  = sorted( list(test_dir.glob('shot*.h5')) )
         
         return train_files, val_files, test_files
 
