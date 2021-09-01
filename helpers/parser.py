@@ -110,6 +110,29 @@ def parse():
                         choices=None, \
                         help='beta_2 for Adam', \
                         metavar=None)
+    # Used for inference
+    parser.add_argument('--inference_mode', \
+                        action='store_true', \
+                        default=False, \
+                        help='train or inference')
+    parser.add_argument('-state_file_dir', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default='./', \
+                        type=str, \
+                        choices=None, \
+                        help='directory storing torch state files', \
+                        metavar=None)
+    parser.add_argument('--load_nth_state_file', \
+                        action='store', \
+                        nargs='?', \
+                        const=None, \
+                        default=0, \
+                        type=int, \
+                        choices=None, \
+                        help='nth state file to load', \
+                        metavar=None)
 
     args = parser.parse_args()
 

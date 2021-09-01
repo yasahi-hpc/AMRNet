@@ -10,6 +10,7 @@ import itertools
 from .flow_dataset import FlowDataset
 from .amr_net import LocalEnhancer
 from .visualization import save_flows
+from .converter import save_as_netcdf
 
 class AMRNetTrainer(_BaseTrainer):
     def __init__(self, **kwargs):
@@ -72,6 +73,24 @@ class AMRNetTrainer(_BaseTrainer):
         if self.device == 'cuda':
             torch.cuda.synchronize() # Waits for everything to finish running
 
+    def _initialize_for_inference(self, **kwargs):
+        # Set output directory
+        super()._prepare_dirs()
+        
+        self.train_loader, self.val_loader, self.test_loader = super()._dataloaders()
+        self.model = self._get_model(self.run_number)
+        self.model = self.model.to(self.device)
+        
+        # Set normalization coefficients
+        super()._set_normalization_coefs(shape=[1,1,1,-1,1,1])
+        
+        # Memory measurement
+        self.memory = MeasureMemory(device=self.device)
+        
+        # Synchronize
+        if self.device == 'cuda':
+            torch.cuda.synchronize() # Waits for everything to finish running
+
     def _get_model(self, run_number):
         model = LocalEnhancer(dropout=self.dropout, dim=self.dim, padding_mode=self.padding_mode, patched=True)
 
@@ -96,67 +115,6 @@ class AMRNetTrainer(_BaseTrainer):
             self.epoch_start = int(epoch_end) + 1
 
         return model
-        
-    def _step(self, epoch):
-        total_epoch = self.epoch_start + epoch
-        if self.master:
-            print(f'Epoch {total_epoch}')
-
-        self.train_sampler.set_epoch(total_epoch)
-        self.val_sampler.set_epoch(total_epoch)
-        self.test_sampler.set_epoch(total_epoch)
-
-        # Training
-        with torch.enable_grad():
-            self._train(data_loader=self.train_loader, epoch=total_epoch)
-
-        # Validation
-        with torch.no_grad():
-            self._validation(data_loader=self.val_loader, epoch=total_epoch, name='validation')
-
-        # Test
-        with torch.no_grad():
-            self._validation(data_loader=self.test_loader, epoch=total_epoch, name='test')
-
-        # Save models
-        if epoch % 10 == 0:
-            torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
-
-    def _finalize(self, seconds):
-        # Save models
-        total_epoch = self.epoch_start + self.n_epochs - 1
-        torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
-
-        # Saving relevant data in a hdf5 file
-        data_vars = {}
-        for key, value in self.elapsed_times.items():
-            if len(value) > 0:
-                var = np.asarray(value)
-                nb_calls = len(var) //self. n_epochs
-                var = var.reshape((self.n_epochs, nb_calls))
-                data_vars[f'seconds_{key}']= (['epochs'], np.sum(var, axis=1))
-
-        # Losses
-        for key, value in self.loss_dict.items():
-            if len(value) > 0:
-                data_vars[key] = (['epochs'], np.asarray(value))
-
-        coords = {'epochs': np.arange(self.n_epochs) + self.epoch_start}
-        attrs = super()._get_attrs()
-        attrs['seconds'] = seconds
-
-        attrs['memory_reserved'] = self.memory_consumption['reserved']
-        attrs['memory_alloc'] = self.memory_consumption['alloc']
-
-        ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
-        result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{self.run_number:03}.h5'
-        ds.to_netcdf(result_filename, engine='netcdf4')
-
-        if self.master:
-            log_filename = f'log_rst{self.run_number:03}.txt'
-             
-            with open(log_filename, 'w') as f:
-                f.write( f'It took {seconds} seconds for {self.n_epochs} epochs')
 
     ########### Main scripts 
     def _train(self, data_loader, epoch):
@@ -528,3 +486,149 @@ class AMRNetTrainer(_BaseTrainer):
         for key, value in losses.items():
             loss = super()._metric_average(value, key)
             self.loss_dict[key].append(loss)
+
+    ### For inference
+    def _infer(self):
+        with torch.no_grad():
+            self._convert(data_loader=self.val_loader, name='validation')
+            self._convert(data_loader=self.test_loader, name='test')
+
+    def _convert(self, data_loader, name):
+        self.model.eval()
+        
+        for indices, sdf, flows in data_loader:
+            # Load data and meta-data
+            sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf
+            flows_Lv0, flows_Lv1, flows_Lv2 = flows
+        
+            _, patch_y_Lv1, patch_x_Lv1, *_ = sdf_Lv1.shape
+            _, patch_y_Lv2, patch_x_Lv2, *_ = sdf_Lv2.shape
+        
+            # Number of sub patches in each level
+            nb_patches_Lv2 = patch_y_Lv2 * patch_x_Lv2
+            nb_patches_Lv1 = patch_y_Lv1 * patch_x_Lv1
+        
+            # Sub patch inside the Lv1 patch
+            patch_y_Lv2 = patch_y_Lv2 // patch_y_Lv1
+            patch_x_Lv2 = patch_x_Lv2 // patch_x_Lv1
+        
+            ## To device
+            self.timer.start()
+        
+            sdf_Lv0, sdf_Lv1, sdf_Lv2 = sdf_Lv0.to(self.device), sdf_Lv1.to(self.device), sdf_Lv2.to(self.device)
+            flows_Lv0, flows_Lv1, flows_Lv2 = flows_Lv0.to(self.device), flows_Lv1.to(self.device), flows_Lv2.to(self.device)
+        
+            self.timer.stop()
+            self.elapsed_times[f'MemcpyH2D_{name}'].append(self.timer.elapsed_seconds())
+        
+            # Keep sdfs on CPUs
+            sdf_Lv0_cpu = sdf_Lv0.to('cpu')
+            sdf_Lv1_cpu = sdf_Lv1.to('cpu')
+            sdf_Lv2_cpu = sdf_Lv2.to('cpu')
+
+            ## Normalization or standardization
+            sdf_Lv0 = super()._preprocess(sdf_Lv0, self.sdf_Lv0_var0, self.sdf_Lv0_var1)
+            sdf_Lv1 = super()._preprocess(sdf_Lv1, self.sdf_Lv1_var0, self.sdf_Lv1_var1)
+            sdf_Lv2 = super()._preprocess(sdf_Lv2, self.sdf_Lv2_var0, self.sdf_Lv2_var1)
+            
+            flows_Lv0 = super()._preprocess(flows_Lv0, self.flows_Lv0_var0, self.flows_Lv0_var1)
+            flows_Lv1 = super()._preprocess(flows_Lv1, self.flows_Lv1_var0, self.flows_Lv1_var1)
+            flows_Lv2 = super()._preprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+            
+            # Objectives: construct pred_flows_Lv0-Lv2
+            pred_flows_Lv0_ = torch.zeros_like(flows_Lv0, device='cpu')
+            pred_flows_Lv1_ = torch.zeros_like(flows_Lv1, device='cpu')
+            pred_flows_Lv2_ = torch.zeros_like(flows_Lv2, device='cpu')
+            
+            #### Infer Lv0
+            self.timer.start()
+            sdf_Lv0_ = sdf_Lv0[:, 0, 0]
+            flows_Lv0_ = flows_Lv0[:, 0, 0]
+            
+            _, _, ny, nx = sdf_Lv0_.shape
+            
+            ### Prediction and Destandardization
+            pred_flows_Lv0 = self.model(sdf_Lv0_)
+            pred_flows_Lv0 = super()._postprocess(pred_flows_Lv0, self.flows_Lv0_var0, self.flows_Lv0_var1)
+            pred_flows_Lv0_[:, 0, 0, :, :, :] = pred_flows_Lv0.detach().cpu()
+            
+            self.timer.stop()
+            level = 0
+            self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
+
+            ### Infer Lv1
+            for iy_Lv1, ix_Lv1 in itertools.product(range(patch_y_Lv1), range(patch_x_Lv1)):
+                self.timer.start()
+                sdf_Lv1_ = sdf_Lv1[:, iy_Lv1, ix_Lv1]
+                flows_Lv1_ = flows_Lv1[:, iy_Lv1, ix_Lv1]
+            
+                ny_Lv0, nx_Lv0 = ny//2, nx//2
+                starts = (iy_Lv1*ny_Lv0, ix_Lv1*nx_Lv0)
+                ends   = ((iy_Lv1+1)*ny_Lv0, (ix_Lv1+1)*nx_Lv0)
+                patch_range_Lv1 = [slice(None)] * 4
+                patch_range_Lv1[2] = slice(starts[0], ends[0])
+                patch_range_Lv1[3] = slice(starts[1], ends[1])
+                patch_range_Lv1 = tuple(patch_range_Lv1)
+            
+                ### Prediction and Destandardization
+                pred_flows_Lv1 = self.model([sdf_Lv0_, sdf_Lv1_], patch_ranges=[patch_range_Lv1])
+                pred_flows_Lv1 = super()._postprocess(pred_flows_Lv1, self.flows_Lv1_var0, self.flows_Lv1_var1)
+                pred_flows_Lv1_[:, iy_Lv1, ix_Lv1, :, :, :] = pred_flows_Lv1.detach().cpu()
+            
+                self.timer.stop()
+                level = 1
+                self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
+            
+                ### Train Lv2
+                for iy_Lv2, ix_Lv2 in itertools.product(range(patch_y_Lv2), range(patch_x_Lv2)):
+                    self.timer.start()
+                    global_ix_Lv2 = ix_Lv2 + (ix_Lv1 * patch_x_Lv2)
+                    global_iy_Lv2 = iy_Lv2 + (iy_Lv1 * patch_y_Lv2)
+                    sdf_Lv2_   = sdf_Lv2[:, global_iy_Lv2, global_ix_Lv2]
+                    flows_Lv2_ = flows_Lv2[:, global_iy_Lv2, global_ix_Lv2]
+            
+                    ny_Lv1, nx_Lv1 = ny//2, nx//2
+                    starts = (iy_Lv2*ny_Lv1, ix_Lv2*nx_Lv1)
+                    ends   = ((iy_Lv2+1)*ny_Lv1, (ix_Lv2+1)*nx_Lv1)
+                    patch_range_Lv2 = [slice(None)] * 4
+                    patch_range_Lv2[2] = slice(starts[0], ends[0])
+                    patch_range_Lv2[3] = slice(starts[1], ends[1])
+                    patch_range_Lv2 = tuple(patch_range_Lv2)
+            
+                    ### Prediction and Destandardization
+                    pred_flows_Lv2 = self.model([sdf_Lv0_, sdf_Lv1_, sdf_Lv2_], patch_ranges=[patch_range_Lv1, patch_range_Lv2])
+                    pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+                    pred_flows_Lv2_[:, global_iy_Lv2, global_ix_Lv2, :, :, :] = pred_flows_Lv2.detach().cpu()
+            
+                    self.timer.stop()
+                    level = 2
+                    self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
+
+            # Save the data in netcdf format
+            self.timer.start()
+            flows_Lv0 = super()._postprocess(flows_Lv0, self.flows_Lv0_var0, self.flows_Lv0_var1)
+            flows_Lv1 = super()._postprocess(flows_Lv1, self.flows_Lv1_var0, self.flows_Lv1_var1)
+            flows_Lv2 = super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+            
+            ### Zeros inside objects
+            pred_flows_Lv0_ = super()._zeros_inside_objects(pred_flows_Lv0_, sdf_Lv0_cpu)
+            pred_flows_Lv1_ = super()._zeros_inside_objects(pred_flows_Lv1_, sdf_Lv1_cpu)
+            pred_flows_Lv2_ = super()._zeros_inside_objects(pred_flows_Lv2_, sdf_Lv2_cpu)
+            
+            ### Lv0 data
+            level = 0
+            save_as_netcdf(sdf=sdf_Lv0_cpu, real_flows=flows_Lv0.cpu(), pred_flows=pred_flows_Lv0_,
+                           indices=indices, epoch=self.epoch_start, level=level, name=name, data_dir=self.inference_dir)
+            
+            ### Lv0 data
+            level = 1
+            save_as_netcdf(sdf=sdf_Lv1_cpu, real_flows=flows_Lv1.cpu(), pred_flows=pred_flows_Lv1_,
+                           indices=indices, epoch=self.epoch_start, level=level, name=name, data_dir=self.inference_dir)
+            
+            ### Lv0 data
+            level = 2
+            save_as_netcdf(sdf=sdf_Lv2_cpu, real_flows=flows_Lv2.cpu(), pred_flows=pred_flows_Lv2_,
+                           indices=indices, epoch=self.epoch_start, level=level, name=name, data_dir=self.inference_dir)
+            
+            self.timer.stop()
+            self.elapsed_times[f'save_data_{name}'].append(self.timer.elapsed_seconds())

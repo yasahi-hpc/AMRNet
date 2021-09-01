@@ -83,6 +83,9 @@ class _BaseTrainer:
                           'gradient_predivide_factor',
                           'loss_type',
                           'padding_mode',
+                          'inference_mode',
+                          'state_file_dir',
+                          'load_nth_state_file',
                          }
         for kwarg in kwargs:
             if kwarg not in allowed_kwargs:
@@ -112,58 +115,157 @@ class _BaseTrainer:
         self.loss_type  = kwargs.get('loss_type', 'mae_loss')
         self.scale  = kwargs.get('scale', 2)
         self.n_epochs = kwargs.get('n_epochs', 16)
+        self.inference_mode = kwargs.get('inference_mode', False)
+        self.state_file_dir = kwargs.get('state_file_dir', './')
+        self.load_nth_state_file = kwargs.get('load_nth_state_file', 0)
 
         self.timer = Timer(device=self.device)
 
     def initialize(self, **kwargs):
-        self._initialize(**kwargs)
+        if self.inference_mode:
+            self._initialize_for_inference(**kwargs)
+        else:
+            self._initialize(**kwargs)
 
     def _initialize(self, **kwargs):
+        raise NotImplementedError()
+
+    def _initialize_for_inference(self, **kwargs):
         raise NotImplementedError()
 
     def step(self, epoch):
         self._step(epoch)
 
     def _step(self, epoch):
-        raise NotImplementedError()
+        total_epoch = self.epoch_start + epoch
+        if self.master:
+            print(f'Epoch {total_epoch}')
+        
+        self.train_sampler.set_epoch(total_epoch)
+        self.val_sampler.set_epoch(total_epoch)
+        self.test_sampler.set_epoch(total_epoch)
+        
+        # Training
+        with torch.enable_grad():
+            self._train(data_loader=self.train_loader, epoch=total_epoch)
+        
+        # Validation
+        with torch.no_grad():
+            self._validation(data_loader=self.val_loader, epoch=total_epoch, name='validation')
+        
+        # Test
+        with torch.no_grad():
+            self._validation(data_loader=self.test_loader, epoch=total_epoch, name='test')
+        
+        # Save models
+        if epoch % 10 == 0:
+            torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
 
     def finalize(self, seconds):
         self._finalize(seconds)
 
     def _finalize(self, seconds):
+        if self.inference_mode:
+            # Saving relevant data in a hdf5 file
+            data_vars = {}
+            for key, value in self.elapsed_times.items():
+                if len(value) > 0:
+                    var = np.asarray(value)
+                    nb_calls = len(var) // 1
+                    var = var.reshape((1, nb_calls))
+                    data_vars[f'seconds_{key}']= (['epochs'], np.sum(var, axis=1))
+            
+            coords = {'epochs': np.arange(1)}
+            attrs = {}
+            attrs['seconds'] = seconds
+            
+            ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
+            result_filename = self.inference_dir / f'inference_{self.epoch_start:03}.h5'
+            ds.to_netcdf(result_filename, engine='netcdf4')
+            
+            log_filename = f'log_inference_{self.epoch_start:03}.txt'
+            with open(log_filename, 'w') as f:
+                f.write( f'It took {seconds} seconds for inference')
+                         
+        else:
+            # Save models
+            total_epoch = self.epoch_start + self.n_epochs - 1
+            torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
+            
+            # Saving relevant data in a hdf5 file
+            data_vars = {}
+            for key, value in self.elapsed_times.items():
+                if len(value) > 0:
+                    var = np.asarray(value)
+                    nb_calls = len(var) //self. n_epochs
+                    var = var.reshape((self.n_epochs, nb_calls))
+                    data_vars[f'seconds_{key}']= (['epochs'], np.sum(var, axis=1))
+            
+            # Losses
+            for key, value in self.loss_dict.items():
+                if len(value) > 0:
+                    data_vars[key] = (['epochs'], np.asarray(value))
+            
+            coords = {'epochs': np.arange(self.n_epochs) + self.epoch_start}
+            attrs = super()._get_attrs()
+            attrs['seconds'] = seconds
+            
+            attrs['memory_reserved'] = self.memory_consumption['reserved']
+            attrs['memory_alloc'] = self.memory_consumption['alloc']
+            
+            ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
+            result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{self.run_number:03}.h5'
+            ds.to_netcdf(result_filename, engine='netcdf4')
+            
+            if self.master:
+                log_filename = f'log_rst{self.run_number:03}.txt'
+            
+            with open(log_filename, 'w') as f:
+                f.write( f'It took {seconds} seconds for {self.n_epochs} epochs')
+
+    # Inference
+    def infer(self):
+        self._infer()
+        raise NotImplementedError()
+
+    def _infer(self):
         raise NotImplementedError()
 
     def _prepare_dirs(self):
-        self.out_dir = pathlib.Path(f'torch_model_MPI{self.size}') / f'{self.model_name}'
-        self.img_dir = pathlib.Path('GeneratedImages')
-        if self.master:
-            if not self.out_dir.exists():
-                self.out_dir.mkdir(parents=True)
-          
-        if not self.img_dir.exists():
-            self.img_dir.mkdir(parents=True)
+        if self.inference_mode:
+            self.inference_dir = pathlib.Path('inference')
+            if not self.inference_dir.exists():
+                self.inference_dir.mkdir(parents=True)
+        else:
+            self.out_dir = pathlib.Path(f'torch_model_MPI{self.size}') / f'{self.model_name}'
+            self.img_dir = pathlib.Path('GeneratedImages')
+            if self.master:
+                if not self.out_dir.exists():
+                    self.out_dir.mkdir(parents=True)
+              
+            if not self.img_dir.exists():
+                self.img_dir.mkdir(parents=True)
 
-        # Barrier
-        hvd.allreduce(torch.tensor(1), name="Barrier")
-        
-        # Create sub directories
-        sub_img_dir = self.img_dir / f'rank{self.rank}'
-        if not sub_img_dir.exists():
-            sub_img_dir.mkdir(parents=True)
+            # Barrier
+            hvd.allreduce(torch.tensor(1), name="Barrier")
+            
+            # Create sub directories
+            sub_img_dir = self.img_dir / f'rank{self.rank}'
+            if not sub_img_dir.exists():
+                sub_img_dir.mkdir(parents=True)
 
-        self.sub_img_dir = sub_img_dir
-         
-        self.model_dir = self.out_dir / f'rank{self.rank}'
-        if not self.model_dir.exists():
-            self.model_dir.mkdir(parents=True)
-                
-        levels = np.arange(3)
-        modes = ['train', 'test', 'validation']
-        for mode, level in itertools.product(modes, levels):
-            sub_dir = sub_img_dir / f'{mode}_Lv{level}'
-            if not sub_dir.exists():
-                sub_dir.mkdir(parents=True)
-
+            self.sub_img_dir = sub_img_dir
+             
+            self.model_dir = self.out_dir / f'rank{self.rank}'
+            if not self.model_dir.exists():
+                self.model_dir.mkdir(parents=True)
+                    
+            levels = np.arange(3)
+            modes = ['train', 'test', 'validation']
+            for mode, level in itertools.product(modes, levels):
+                sub_dir = sub_img_dir / f'{mode}_Lv{level}'
+                if not sub_dir.exists():
+                    sub_dir.mkdir(parents=True)
 
     def __split_files(self):
         names = ['train', 'val', 'test']
@@ -176,28 +278,39 @@ class _BaseTrainer:
 
     def _dataloaders(self):
         train_files, val_files, test_files = self.__split_files()
-        train_dataset = FlowDataset(files=train_files, model_name=self.model_name)
-        val_dataset   = FlowDataset(files=val_files, model_name=self.model_name)
-        test_dataset  = FlowDataset(files=test_files, model_name=self.model_name)
-        
-        # Horovod: use DistributedSampler to partition the training data
-        self.train_sampler = torch.utils.data.distributed.DistributedSampler(
-                                train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-        self.val_sampler = torch.utils.data.distributed.DistributedSampler(
-                                val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=False)
-        self.test_sampler = torch.utils.data.distributed.DistributedSampler(
-                                test_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=False)
-        
-        kwargs = {'num_workers': 1, 'pin_memory': True} if self.device == 'cuda' else {}
-        # When supported, use 'forkserver' to spawn dataloader workers instead of 'fork'
-        # issues with Infiniband implementations that are not fork-safe
-        if (kwargs.get('num_workers', 0) > 0 and hasattr(mp, '_supports_context') and
-            mp._supports_context and 'forkserver' in mp.get_all_start_methods()):
-            kwargs['multiprocessing_context'] = 'forkserver'
-        
-        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=self.train_sampler, **kwargs)
-        val_loader   = DataLoader(val_dataset,   batch_size=self.batch_size, sampler=self.val_sampler, **kwargs)
-        test_loader  = DataLoader(test_dataset,  batch_size=self.batch_size, sampler=self.test_sampler, **kwargs)
+
+        if self.inference_mode:
+            # Inference does not rely on horovod
+            train_dataset = FlowDataset(files=train_files, model_name=self.model_name, return_indices=True)
+            val_dataset   = FlowDataset(files=val_files, model_name=self.model_name, return_indices=True)
+            test_dataset  = FlowDataset(files=test_files, model_name=self.model_name, return_indices=True)
+            
+            train_loader = DataLoader(train_dataset, batch_size=self.batch_size)
+            val_loader   = DataLoader(val_dataset,   batch_size=self.batch_size)
+            test_loader  = DataLoader(test_dataset,  batch_size=self.batch_size)
+        else:
+            train_dataset = FlowDataset(files=train_files, model_name=self.model_name)
+            val_dataset   = FlowDataset(files=val_files, model_name=self.model_name)
+            test_dataset  = FlowDataset(files=test_files, model_name=self.model_name)
+            
+            # Horovod: use DistributedSampler to partition the training data
+            self.train_sampler = torch.utils.data.distributed.DistributedSampler(
+                                    train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            self.val_sampler = torch.utils.data.distributed.DistributedSampler(
+                                    val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=False)
+            self.test_sampler = torch.utils.data.distributed.DistributedSampler(
+                                    test_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=False)
+            
+            kwargs = {'num_workers': 1, 'pin_memory': True} if self.device == 'cuda' else {}
+            # When supported, use 'forkserver' to spawn dataloader workers instead of 'fork'
+            # issues with Infiniband implementations that are not fork-safe
+            if (kwargs.get('num_workers', 0) > 0 and hasattr(mp, '_supports_context') and
+                mp._supports_context and 'forkserver' in mp.get_all_start_methods()):
+                kwargs['multiprocessing_context'] = 'forkserver'
+            
+            train_loader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=self.train_sampler, **kwargs)
+            val_loader   = DataLoader(val_dataset,   batch_size=self.batch_size, sampler=self.val_sampler, **kwargs)
+            test_loader  = DataLoader(test_dataset,  batch_size=self.batch_size, sampler=self.test_sampler, **kwargs)
         
         return train_loader, val_loader, test_loader
 
