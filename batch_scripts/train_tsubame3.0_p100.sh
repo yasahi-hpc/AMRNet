@@ -1,6 +1,6 @@
 #!/bin/sh
 #$ -cwd              # job execution in the current directory
-#$ -l f_node=4       # Using f_node
+#$ -l f_node=1       # Using f_node
 #$ -l h_rt=24:00:00  # Execution time
 #$ -N Horovod        # job execution in the current directory
           
