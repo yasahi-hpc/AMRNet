@@ -159,7 +159,16 @@ class _BaseTrainer:
         
         # Save models
         if epoch % 10 == 0:
-            torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
+            self._save_models(self, total_epoch=total_epoch)
+
+    def _train(self, data_loader, epoch):
+        raise NotImplementedError()
+
+    def _validation(self, data_loader, epoch, name):
+        raise NotImplementedError()
+
+    def _save_models(self, total_epoch):
+        raise NotImplementedError()
 
     def finalize(self, seconds):
         self._finalize(seconds)
@@ -190,7 +199,7 @@ class _BaseTrainer:
         else:
             # Save models
             total_epoch = self.epoch_start + self.n_epochs - 1
-            torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
+            self._save_models(self, total_epoch=total_epoch)
             
             # Saving relevant data in a hdf5 file
             data_vars = {}

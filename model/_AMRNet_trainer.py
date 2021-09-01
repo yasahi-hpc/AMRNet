@@ -122,6 +122,9 @@ class AMRNetTrainer(_BaseTrainer):
 
         return model
 
+    def _save_models(self, total_epoch):
+        torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
+
     ########### Main scripts 
     def _train(self, data_loader, epoch):
         name = 'train'
