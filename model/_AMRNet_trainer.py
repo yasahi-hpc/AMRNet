@@ -307,7 +307,7 @@ class AMRNetTrainer(_BaseTrainer):
                     log_loss[level] += loss_mae.item() / (nb_samples * nb_patches_Lv2)
                     
                     ### Destandardization and save
-                    pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv1_var0, self.flows_Lv1_var1)
+                    pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
                     pred_flows_Lv2_[:, global_iy_Lv2, global_ix_Lv2, :, :, :] = pred_flows_Lv2.detach().cpu()
 
                     self.timer.stop()
@@ -481,7 +481,7 @@ class AMRNetTrainer(_BaseTrainer):
                     log_loss[level] += loss_mae.item() / (nb_samples * nb_patches_Lv2)
                     
                     ### Destandardization and save
-                    pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv1_var0, self.flows_Lv1_var1)
+                    pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
                     pred_flows_Lv2_[:, global_iy_Lv2, global_ix_Lv2, :, :, :] = pred_flows_Lv2.detach().cpu()
 
                     self.timer.stop()
