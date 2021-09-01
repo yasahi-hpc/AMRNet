@@ -11,6 +11,7 @@ from .flow_dataset import FlowDataset
 from .unet import UNet
 import sys
 from .visualization import save_flows
+from .converter import save_as_netcdf
 
 class UNetTrainer(_BaseTrainer):
     def __init__(self, **kwargs):
@@ -77,94 +78,58 @@ class UNetTrainer(_BaseTrainer):
         if self.device == 'cuda':
             torch.cuda.synchronize() # Waits for everything to finish running
 
+    def _initialize_for_inference(self, **kwargs):
+        # Set output directory
+        super()._prepare_dirs()
+        
+        self.train_loader, self.val_loader, self.test_loader = super()._dataloaders()
+        self.model = self._get_model(self.run_number)
+        self.model = self.model.to(self.device)
+        
+        # Set normalization coefficients
+        super()._set_normalization_coefs(shape=[1,-1,1,1])
+        
+        # Memory measurement
+        self.memory = MeasureMemory(device=self.device)
+        
+        # Synchronize
+        if self.device == 'cuda':
+            torch.cuda.synchronize() # Waits for everything to finish running
+
     def _get_model(self, run_number):
         model = UNet(n_layers=8, hidden_dim=8, dim=self.dim, padding_mode=self.padding_mode)
 
-        self.epoch_start = 0
-        if run_number > 0:
-            if self.master:
-                print(f'restart, {run_number}')
-            # Load model states from previous run
-            prev_run_number = run_number - 1
-            prev_result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{prev_run_number:03}.h5'
+        if self.inference_mode:
+            self.epoch_start = self.load_nth_state_file
+            # To load the state file for inference
+            rank = 0
+            model.load_state_dict( torch.load(f'{self.state_file_dir}/model_{rank}_{self.epoch_start:03}.pt') )
+             
+        else:
+            self.epoch_start = 0
+            if run_number > 0:
+                if self.master:
+                    print(f'restart, {run_number}')
+                # Load model states from previous run
+                prev_run_number = run_number - 1
+                prev_result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{prev_run_number:03}.h5'
 
-            if not prev_result_filename.is_file():
-                raise IOError(f'prev_result_filename')
+                if not prev_result_filename.is_file():
+                    raise IOError(f'prev_result_filename')
 
-            ds_prev = xr.open_dataset(prev_result_filename, engine='netcdf4')
+                ds_prev = xr.open_dataset(prev_result_filename, engine='netcdf4')
 
-            # To load the previous files
-            epoch_end = ds_prev.attrs['epoch_end']
-            model.load_state_dict( torch.load(f'{self.model_dir}/model_{self.rank}_{epoch_end:03}.pt') )
+                # To load the previous files
+                epoch_end = ds_prev.attrs['epoch_end']
+                model.load_state_dict( torch.load(f'{self.model_dir}/model_{self.rank}_{epoch_end:03}.pt') )
 
-            # Next epoch should start from epoch_end + 1
-            self.epoch_start = int(epoch_end) + 1
+                # Next epoch should start from epoch_end + 1
+                self.epoch_start = int(epoch_end) + 1
 
         return model
     
     def _save_models(self, total_epoch):
         torch.save(self.model.state_dict(), f'{self.model_dir}/model_{self.rank}_{total_epoch:03}.pt')
-        
-    def _step(self, epoch):
-        total_epoch = self.epoch_start + epoch
-        if self.master:
-            print(f'Epoch {total_epoch}')
-
-        self.train_sampler.set_epoch(total_epoch)
-        self.val_sampler.set_epoch(total_epoch)
-        self.test_sampler.set_epoch(total_epoch)
-
-        # Training
-        with torch.enable_grad():
-            self._train(data_loader=self.train_loader, epoch=total_epoch)
-
-        # Validation
-        with torch.no_grad():
-            self._validation(data_loader=self.val_loader, epoch=total_epoch, name='validation')
-
-        # Test
-        with torch.no_grad():
-            self._validation(data_loader=self.test_loader, epoch=total_epoch, name='test')
-
-        # Save models
-        if epoch % 10 == 0:
-            self._save_models(total_epoch=total_epoch)
-
-    def _finalize(self, seconds):
-        # Save models
-        total_epoch = self.epoch_start + self.n_epochs - 1
-        self._save_models(total_epoch=total_epoch)
-
-        # Saving relevant data in a hdf5 file
-        data_vars = {}
-        for key, value in self.elapsed_times.items():
-            if len(value) > 0:
-                var = np.asarray(value)
-                nb_calls = len(var) //self. n_epochs
-                var = var.reshape((self.n_epochs, nb_calls))
-                data_vars[f'seconds_{key}']= (['epochs'], np.sum(var, axis=1))
-
-        # Losses
-        for key, value in self.loss_dict.items():
-            if len(value) > 0:
-                data_vars[key] = (['epochs'], np.asarray(value))
-
-        coords = {'epochs': np.arange(self.n_epochs) + self.epoch_start}
-        attrs = super()._get_attrs()
-        attrs['seconds'] = seconds
-
-        attrs['memory_reserved'] = self.memory_consumption['reserved']
-        attrs['memory_alloc'] = self.memory_consumption['alloc']
-
-        ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
-        result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{self.run_number:03}.h5'
-        ds.to_netcdf(result_filename, engine='netcdf4')
-
-        if self.master:
-            log_filename = f'log_rst{self.run_number:03}.txt'
-             
-            with open(log_filename, 'w') as f:
-                f.write( f'It took {seconds} seconds for {self.n_epochs} epochs')
 
     ########### Main scripts 
     def _train(self, data_loader, epoch):
@@ -330,3 +295,65 @@ class UNetTrainer(_BaseTrainer):
         for key, value in losses.items():
             loss = super()._metric_average(value, key)
             self.loss_dict[key].append(loss)
+
+    ### For inference
+    def _infer(self):
+        with torch.no_grad():
+            self._convert(data_loader=self.val_loader, name='validation')
+            self._convert(data_loader=self.test_loader, name='test')
+             
+    def _convert(self, data_loader, name):
+        self.model.eval()
+        level = 2
+        for indices, sdf, flows in data_loader:
+            # Load data and meta-data
+            *_, sdf_Lv2 = sdf
+            *_, flows_Lv2 = flows
+        
+            batch_len = len(sdf_Lv2)
+        
+            ## To device
+            self.timer.start()
+        
+            sdf_Lv2   = sdf_Lv2.to(self.device)
+            flows_Lv2 = flows_Lv2.to(self.device)
+        
+            self.timer.stop()
+            self.elapsed_times[f'MemcpyH2D_{name}'].append(self.timer.elapsed_seconds())
+        
+            # Keep sdfs on CPUs
+            sdf_Lv2_cpu = sdf_Lv2.to('cpu')
+        
+            ## Normalization or standardization
+            sdf_Lv2 = super()._preprocess(sdf_Lv2, self.sdf_Lv2_var0, self.sdf_Lv2_var1)
+            flows_Lv2 = super()._preprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+        
+            # Objectives: construct pred_flows_Lv2
+            pred_flows_Lv2_ = torch.zeros_like(flows_Lv2, device='cpu')
+        
+            #### Infer Lv2
+            self.timer.start()
+        
+            ### Update weights
+            pred_flows_Lv2 = self.model(sdf_Lv2)
+        
+            ### Destandardization and save
+            pred_flows_Lv2 = super()._postprocess(pred_flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+            pred_flows_Lv2_ = pred_flows_Lv2.detach().cpu()
+        
+            self.timer.stop()
+            self.elapsed_times[f'{name}_Lv{level}'].append(self.timer.elapsed_seconds())
+        
+            # Save the data in netcdf format
+            self.timer.start()
+            flows_Lv2 = super()._postprocess(flows_Lv2, self.flows_Lv2_var0, self.flows_Lv2_var1)
+        
+            ### Zeros inside objects
+            pred_flows_Lv2_ = super()._zeros_inside_objects(pred_flows_Lv2_, sdf_Lv2_cpu)
+        
+            ### Lv2 data
+            save_as_netcdf(sdf=sdf_Lv2_cpu, real_flows=flows_Lv2.cpu(), pred_flows=pred_flows_Lv2_,
+                           indices=indices, epoch=self.epoch_start, level=level, name=name, data_dir=self.inference_dir)
+        
+            self.timer.stop()
+            self.elapsed_times[f'save_data_{name}'].append(self.timer.elapsed_seconds())
