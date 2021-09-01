@@ -7,12 +7,14 @@ class FlowDataset(torch.utils.data.Dataset):
     def __init__(self, files, transform = None, **kwargs):
         allowed_kwargs = {
                           'model_name',
+                          'return_indices',
                          }
 
         model_name = kwargs.get('model_name')
         if not model_name:
             raise ValueError('model_name must be specified')
         self.model_name = model_name
+        self.return_indices = kwargs.get('return_indices', False)
         
         self.files = files
         self.datanum = len(files)
@@ -54,4 +56,7 @@ class FlowDataset(torch.utils.data.Dataset):
         sdf  = (sdf_Lv0, sdf_Lv1, sdf_Lv2)
         flows = (flows_Lv0, flows_Lv1, flows_Lv2)
 
-        return sdf, flows
+        if self.return_indices:
+            return idx, sdf, flows
+        else:
+            return sdf, flows

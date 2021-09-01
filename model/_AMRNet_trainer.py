@@ -94,25 +94,31 @@ class AMRNetTrainer(_BaseTrainer):
     def _get_model(self, run_number):
         model = LocalEnhancer(dropout=self.dropout, dim=self.dim, padding_mode=self.padding_mode, patched=True)
 
-        self.epoch_start = 0
-        if run_number > 0:
-            if self.master:
-                print(f'restart, {run_number}')
-            # Load model states from previous run
-            prev_run_number = run_number - 1
-            prev_result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{prev_run_number:03}.h5'
+        if self.inference_mode:
+            self.epoch_start = self.load_nth_state_file
+            # To load the state file for inference
+            rank = 0
+            model.load_state_dict( torch.load(f'{self.state_file_dir}/model_{rank}_{self.epoch_start:03}.pt') )
+        else:
+            self.epoch_start = 0
+            if run_number > 0:
+                if self.master:
+                    print(f'restart, {run_number}')
+                # Load model states from previous run
+                prev_run_number = run_number - 1
+                prev_result_filename = self.out_dir / f'flow_cnn_result_rank{self.rank}_rst{prev_run_number:03}.h5'
 
-            if not prev_result_filename.is_file():
-                raise IOError(f'prev_result_filename')
+                if not prev_result_filename.is_file():
+                    raise IOError(f'prev_result_filename')
 
-            ds_prev = xr.open_dataset(prev_result_filename, engine='netcdf4')
+                ds_prev = xr.open_dataset(prev_result_filename, engine='netcdf4')
 
-            # To load the previous files
-            epoch_end = ds_prev.attrs['epoch_end']
-            model.load_state_dict( torch.load(f'{self.model_dir}/model_{self.rank}_{epoch_end:03}.pt') )
+                # To load the previous files
+                epoch_end = ds_prev.attrs['epoch_end']
+                model.load_state_dict( torch.load(f'{self.model_dir}/model_{self.rank}_{epoch_end:03}.pt') )
 
-            # Next epoch should start from epoch_end + 1
-            self.epoch_start = int(epoch_end) + 1
+                # Next epoch should start from epoch_end + 1
+                self.epoch_start = int(epoch_end) + 1
 
         return model
 
