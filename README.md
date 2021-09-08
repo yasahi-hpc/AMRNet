@@ -66,7 +66,7 @@ Data variables:
 ```
 The inputs for the model are ```SDF_lv0 - SDF_lv2``` and outputs are ```u_lv0 - u_lv2, v_lv0 - v_lv2```. Each variable has the shape of ```(py, px, Ny, Nx)```, where ```px, py``` are the number of patches in x and y directions. ```Nx, Ny``` are the number of grid points in x and y directions inside a patch. 
 
-The dataset can be downloaded from [Dataset (under preparation)]().
+The dataset can be downloaded from [Dataset (2000 training data, 250 validation data and 250 test data)](https://zenodo.org/record/5482187#.YThgOC0Rq3A).
 
 
 ## Training
@@ -90,7 +90,6 @@ mpirun -x PATH -x LD_LIBRARY_PATH -x PSM2_CUDA=1 -x PSM2_GPUDIRECT=1 \
        python run.py --batch_size 4 --n_epochs 1 --model_name AMR_Net \
        -data_dir ./dataset \
        --padding_mode replicate --lr 0.0002 --run_number $nb_restart
-fi
 ```
 
 Firstly, you need to prepare your batch script ```./batch_scripts/<your_job_script>``` and modify ```./job.sh```. Then, you can run (or submit) the script by 
